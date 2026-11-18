@@ -1,0 +1,182 @@
+rules_version = '2';
+
+// Cute Reminder & SOS — Firestore security rules
+// Deploy:  firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // links/{uidA_uidB} with the two uids sorted
+    function linkPath(a, b) {
+      return /databases/$(database)/documents/links/$(a < b ? a + '_' + b : b + '_' + a);
+    }
+
+    function linkAccepted(a, b) {
+      return exists(linkPath(a, b)) && get(linkPath(a, b)).data.status == 'ACCEPTED';
+    }
+
+    // Only my own uid may be added to / removed from a list
+    function onlyMine(oldList, newList) {
+      return oldList.toSet().difference(newList.toSet())
+        .union(newList.toSet().difference(oldList.toSet()))
+        .hasOnly([request.auth.uid]);
+    }
+
+    // is `contactUid` (by their verified phone) in `owner`'s emergency list?
+    function isEmergencyOf(owner, contactUid) {
+      return exists(/databases/$(database)/documents/emergencyContacts/$(owner + '_' + get(/databases/$(database)/documents/users/$(contactUid)).data.phone));
+    }
+
+    // true when `to` has NOT blocked `from`
+    function notBlocked(from, to) {
+      return !exists(/databases/$(database)/documents/blocks/$(to + '_' + from));
+    }
+
+    function isMemberOfLink(linkId) {
+      return request.auth.uid in get(/databases/$(database)/documents/links/$(linkId)).data.members;
+    }
+
+    function linkIsAccepted(linkId) {
+      return get(/databases/$(database)/documents/links/$(linkId)).data.status == 'ACCEPTED';
+    }
+
+    // ── Profiles ───────────────────────────────────────────────
+    // The phone number can only be stored if it is the OTP-verified number of the account.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && (!('phone' in request.resource.data)
+            || request.resource.data.phone == request.auth.token.phone_number);
+      allow delete: if false;
+    }
+
+    // ── Private details (email, blood group, medical note, address): ONLY the owner ──
+    match /profiles/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ── Profile photo: the owner and people they accepted. Max ~200 KB. ──
+    match /photos/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || linkAccepted(uid, request.auth.uid));
+      allow write: if signedIn() && request.auth.uid == uid
+        && request.resource.data.b64.size() < 200000;
+    }
+
+    // ── Push tokens: only the owner; the Cloud Function reads them with admin rights ──
+    match /tokens/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ── Connections between two people ─────────────────────────
+    match /links/{linkId} {
+      allow get, list: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.emergencyOf.size() == 0
+        && request.resource.data.shareLoc.size() == 0
+        && linkId == (request.resource.data.members[0] < request.resource.data.members[1]
+              ? request.resource.data.members[0] + '_' + request.resource.data.members[1]
+              : request.resource.data.members[1] + '_' + request.resource.data.members[0]);
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.requestedBy == resource.data.requestedBy
+        && (
+          // the person who was asked accepts
+          (resource.data.status == 'PENDING'
+            && request.resource.data.status == 'ACCEPTED'
+            && resource.data.requestedBy != request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+          ||
+          // either person edits only their own emergency / location flags
+          (resource.data.status == 'ACCEPTED'
+            && request.resource.data.status == 'ACCEPTED'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emergencyOf', 'shareLoc'])
+            && onlyMine(resource.data.emergencyOf, request.resource.data.emergencyOf)
+            && onlyMine(resource.data.shareLoc, request.resource.data.shareLoc))
+        );
+
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
+
+      match /messages/{messageId} {
+        allow read: if signedIn() && isMemberOfLink(linkId);
+        allow create: if signedIn() && isMemberOfLink(linkId) && linkIsAccepted(linkId)
+          && request.resource.data.from == request.auth.uid
+          && notBlocked(request.auth.uid, request.resource.data.to);
+        // you can delete only your own messages
+        allow delete: if signedIn() && isMemberOfLink(linkId)
+          && resource.data.from == request.auth.uid;
+      }
+
+      // Listen-together session
+      match /session/{sessionId} {
+        allow read, write: if signedIn() && isMemberOfLink(linkId) && linkIsAccepted(linkId);
+      }
+
+      // Shared to-do list: both people can add, tick and remove
+      match /tasks/{taskId} {
+        allow read, write: if signedIn() && isMemberOfLink(linkId) && linkIsAccepted(linkId);
+      }
+    }
+
+    // ── Inbox: SOS, reminders, alarms, nudges, message pings ───
+    match /events/{eventId} {
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && notBlocked(request.auth.uid, request.resource.data.to)
+        && (
+          // normal mutual features (chat ping, reminder, alarm, nudge, task, music, location request)
+          (!(request.resource.data.type in ['SOS', 'SOS_SAFE', 'SOS_ACK'])
+            && linkAccepted(request.auth.uid, request.resource.data.to))
+          // my SOS goes to anyone in MY emergency list (no acceptance needed)
+          || (request.resource.data.type in ['SOS', 'SOS_SAFE']
+            && isEmergencyOf(request.auth.uid, request.resource.data.to))
+          // an emergency contact tells the sender "I have seen it"
+          || (request.resource.data.type == 'SOS_ACK'
+            && isEmergencyOf(request.resource.data.to, request.auth.uid))
+        );
+      allow read, delete: if signedIn() && resource.data.to == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ── Emergency contacts (one-way, no acceptance) ────────────
+    // Doc id = ownerUid_phone. Only the owner can read / write their list.
+    match /emergencyContacts/{id} {
+      allow create, update: if signedIn()
+        && request.resource.data.owner == request.auth.uid
+        && id == request.auth.uid + '_' + request.resource.data.phone;
+      allow read, delete: if signedIn() && resource.data.owner == request.auth.uid;
+    }
+
+    // ── Blocking: doc id = blockerUid_blockedUid ───────────────
+    match /blocks/{id} {
+      allow create: if signedIn()
+        && request.resource.data.blocker == request.auth.uid
+        && id == request.auth.uid + '_' + request.resource.data.blocked;
+      allow read, delete: if signedIn() && resource.data.blocker == request.auth.uid;
+    }
+
+    // ── Live location ──────────────────────────────────────────
+    // Readable by: me; mutual people I chose to share with; and my emergency contacts
+    // ONLY while an SOS is active.
+    match /locations/{uid} {
+      allow write: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (
+        request.auth.uid == uid
+        || (linkAccepted(uid, request.auth.uid)
+            && notBlocked(request.auth.uid, uid)
+            && uid in get(linkPath(uid, request.auth.uid)).data.shareLoc)
+        || (resource.data.sos == true
+            && exists(/databases/$(database)/documents/emergencyContacts/$(uid + '_' + request.auth.token.phone_number)))
+      );
+    }
+  }
+}

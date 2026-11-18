@@ -1,0 +1,6 @@
+{
+  "name": "Cute Reminder Daily Routine",
+  "description": "A cute daily routine reminder app with alarm-like notifications, task sender to Sujal, and a dedicated emergency panic button.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

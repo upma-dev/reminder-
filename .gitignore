@@ -1,0 +1,40 @@
+# ── Secrets / private config (NEVER push) ─────────────────
+.env
+google-services.json
+*.jks
+*.keystore
+my-upload-key.jks
+service-account*.json
+*-firebase-adminsdk-*.json
+
+# ── Android / Gradle build output ─────────────────────────
+.gradle/
+.kotlin/
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.apk
+*.aab
+*.ap_
+
+# ── Android Studio / IDE ──────────────────────────────────
+*.iml
+.idea/
+.vscode/spellright.dict
+
+# ── Firebase CLI + Cloud Functions ────────────────────────
+functions/node_modules/
+node_modules/
+.firebase/
+firebase-debug.log*
+.firebaserc
+
+# ── OS / temp ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat
