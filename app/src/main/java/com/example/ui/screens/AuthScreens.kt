@@ -241,18 +241,11 @@ fun LoginScreen(
             ) {
                 Text("Welcome 💖", fontWeight = FontWeight.Black, fontSize = 24.sp)
                 Text(
-                    "Mobile number par OTP aayega. Isi number se aapke apne log aapko dhundh kar add karenge.",
+                    "Google se login karo. Uske baad apna mobile number daalna hoga, jisse aapke apne log aapko dhundh sakein.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
-                PhoneOtpSection(state, onSendOtp, onVerifyOtp, onChangeNumber, buttonLabel = "OTP bhejo")
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    HorizontalDivider(Modifier.weight(1f))
-                    Text("  ya  ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    HorizontalDivider(Modifier.weight(1f))
-                }
+                StatusLines(state)
 
                 OutlinedButton(
                     onClick = { activity?.let(onGoogle) },
@@ -265,7 +258,7 @@ fun LoginScreen(
                     Text("Google se Sign up / Login", fontWeight = FontWeight.Bold)
                 }
                 Text(
-                    "Google se aane par bhi ek baar mobile number OTP se verify karna hoga, taaki SOS sahi logon ko jaye.",
+                    "Apna sahi mobile number hi daalna, taaki SOS sahi logon tak jaye.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -284,6 +277,7 @@ fun ProfileSetupScreen(
     onSendOtp: (Activity, String) -> Unit,
     onVerifyOtp: (String) -> Unit,
     onChangeNumber: () -> Unit,
+    onSavePhone: (String) -> Unit,
     onSignOut: () -> Unit
 ) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primaryContainer)) {
@@ -292,7 +286,7 @@ fun ProfileSetupScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                if (state.needsPhone) "Step 1 of 2 • Mobile verify" else "Step 2 of 2 • Aapki details",
+                if (state.needsPhone) "Step 1 of 2 • Mobile number" else "Step 2 of 2 • Aapki details",
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary
             )
             Text("Profile poora karo", fontWeight = FontWeight.Black, fontSize = 26.sp)
@@ -304,10 +298,10 @@ fun ProfileSetupScreen(
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (state.needsPhone) {
-                        Text("Pehle apna mobile number verify karo — SOS isi number se jude logon tak jata hai.")
-                        PhoneOtpSection(state, onSendOtp, onVerifyOtp, onChangeNumber, buttonLabel = "OTP bhejo")
+                        Text("Apna mobile number daalo — SOS isi number se jude logon tak jata hai.")
+                        ManualPhoneSection(state, onSavePhone)
                     } else {
-                        Text("✅ Mobile verified: ${state.profile?.phone.orEmpty()}", fontWeight = FontWeight.SemiBold)
+                        Text("📱 Mobile: ${state.profile?.phone.orEmpty()}", fontWeight = FontWeight.SemiBold)
                         ProfileForm(
                             initial = state.profile,
                             authEmail = authEmail,
@@ -324,6 +318,31 @@ fun ProfileSetupScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ManualPhoneSection(state: AuthState, onSavePhone: (String) -> Unit) {
+    var phone by remember { mutableStateOf("") }
+    OutlinedTextField(
+        value = phone,
+        onValueChange = { phone = it },
+        label = { Text("Mobile number") },
+        placeholder = { Text("98765 43210") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().testTag("manual_phone_input")
+    )
+    Button(
+        onClick = { onSavePhone(phone) },
+        enabled = phone.isNotBlank() && !state.busy,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp).testTag("save_phone_button")
+    ) {
+        if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+        else Text("Aage badho", fontWeight = FontWeight.Bold)
+    }
+    StatusLines(state)
 }
 
 @Composable

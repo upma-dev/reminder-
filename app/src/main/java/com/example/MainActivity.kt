@@ -182,6 +182,7 @@ private fun AppRoot(
                 onSendOtp = { activity, phone -> authViewModel.sendOtp(activity, phone) },
                 onVerifyOtp = authViewModel::verifyOtp,
                 onChangeNumber = authViewModel::changeNumber,
+                onSavePhone = authViewModel::savePhone,
                 onSignOut = {
                     SafetyService.stop(ctx)
                     authViewModel.signOut()

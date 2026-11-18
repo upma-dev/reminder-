@@ -93,7 +93,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         checking = false,
                         signedIn = true,
                         profile = profile,
-                        needsPhone = verifiedPhone.isBlank(),
+                        needsPhone = verifiedPhone.isBlank() && profile?.phone.isNullOrBlank(),
                         needsName = profile?.name.isNullOrBlank(),
                         busy = false
                     )
@@ -222,6 +222,24 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ───────────── Profile / logout ─────────────
+
+    /** Google login + manual number: store the typed phone (no OTP). */
+    fun savePhone(raw: String) {
+        val phone = CloudRepository.normalizePhone(raw)
+        if (!Regex("^\\+[0-9]{10,15}$").matches(phone)) {
+            _state.update { it.copy(error = "Sahi mobile number daalo (10 digit)") }
+            return
+        }
+        _state.update { it.copy(busy = true, error = null) }
+        viewModelScope.launch {
+            try {
+                CloudRepository.saveMyPhone(phone)
+                refreshProfile()
+            } catch (e: Exception) {
+                _state.update { it.copy(busy = false, error = e.localizedMessage) }
+            }
+        }
+    }
 
     fun saveProfile(details: com.example.cloud.ProfileDetails) {
         if (details.name.isBlank()) return

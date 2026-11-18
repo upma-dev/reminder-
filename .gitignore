@@ -1,5 +1,4 @@
 # ── Secrets / private config (NEVER push) ─────────────────
-.env
 google-services.json
 *.jks
 *.keystore
@@ -22,7 +21,6 @@ local.properties
 # ── Android Studio / IDE ──────────────────────────────────
 *.iml
 .idea/
-.vscode/spellright.dict
 
 # ── Firebase CLI + Cloud Functions ────────────────────────
 functions/node_modules/

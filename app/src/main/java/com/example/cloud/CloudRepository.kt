@@ -41,6 +41,11 @@ object CloudRepository {
     var myName: String = ""
         private set
 
+    /** My phone number as stored in my profile (self-entered, NOT OTP-verified). */
+    @Volatile
+    var myPhone: String = ""
+        private set
+
     fun normalizePhone(raw: String): String {
         val cleaned = raw.trim().replace(Regex("[^0-9+]"), "")
         return when {
@@ -91,12 +96,24 @@ object CloudRepository {
             address = priv?.getString("address").orEmpty()
         )
         myName = p.name
+        myPhone = p.phone
         myEmergencyInfo = buildInfo(p.bloodGroup, p.medicalNote, p.address)
         photoCache[me] = p.photoB64
         return p
     }
 
-    /** Creates/updates my profile. The phone number is only written if it is OTP-verified on the account. */
+    /** Saves the phone number the user typed in (not OTP-verified: Google login + manual number). */
+    suspend fun saveMyPhone(raw: String) {
+        val user = auth.currentUser ?: return
+        val phone = normalizePhone(raw)
+        db.collection("users").document(user.uid).set(
+            hashMapOf<String, Any>("phone" to phone, "updatedAt" to System.currentTimeMillis()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+        myPhone = phone
+    }
+
+    /** Creates/updates my profile. A verified (OTP) phone on the account is written too; a manual number is kept as is. */
     suspend fun saveMyProfile(d: ProfileDetails) {
         val user = auth.currentUser ?: return
         val pub = hashMapOf<String, Any>(
@@ -354,14 +371,14 @@ object CloudRepository {
             if (existing != null && existing.exists()) {
                 return Result.failure(IllegalStateException("Ye person pehle se list/request me hai"))
             }
-            val myPhone = auth.currentUser?.phoneNumber.orEmpty()
+            val myPhoneNow = this.myPhone.ifBlank { auth.currentUser?.phoneNumber.orEmpty() }
             ref.set(
                 hashMapOf(
                     "members" to listOf(me, target.uid),
                     "status" to "PENDING",
                     "requestedBy" to me,
                     "names" to mapOf(me to myName.ifBlank { "Someone" }, target.uid to target.name),
-                    "phones" to mapOf(me to myPhone, target.uid to target.phone),
+                    "phones" to mapOf(me to myPhoneNow, target.uid to target.phone),
                     "emergencyOf" to emptyList<String>(),
                     "shareLoc" to emptyList<String>(),
                     "createdAt" to System.currentTimeMillis()
@@ -416,7 +433,7 @@ object CloudRepository {
                 "type" to type,
                 "from" to me,
                 "fromName" to myName.ifBlank { user?.displayName ?: "Someone" },
-                "fromPhone" to (user?.phoneNumber ?: ""),
+                "fromPhone" to myPhone.ifBlank { user?.phoneNumber ?: "" },
                 "to" to to,
                 "title" to title,
                 "body" to body,
@@ -502,7 +519,7 @@ object CloudRepository {
                     "type" to EventType.MESSAGE,
                     "from" to me,
                     "fromName" to myName.ifBlank { "Someone" },
-                    "fromPhone" to (auth.currentUser?.phoneNumber ?: ""),
+                    "fromPhone" to myPhone.ifBlank { auth.currentUser?.phoneNumber ?: "" },
                     "to" to toUid,
                     "title" to myName.ifBlank { "New message" },
                     "body" to text.trim(),

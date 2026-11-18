@@ -44,12 +44,12 @@ service cloud.firestore {
     }
 
     // ── Profiles ───────────────────────────────────────────────
-    // The phone number can only be stored if it is the OTP-verified number of the account.
+    // The phone number is self-entered (Google login, no OTP), so it is NOT verified.
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid
         && (!('phone' in request.resource.data)
-            || request.resource.data.phone == request.auth.token.phone_number);
+            || request.resource.data.phone is string);
       allow delete: if false;
     }
 
@@ -175,7 +175,7 @@ service cloud.firestore {
             && notBlocked(request.auth.uid, uid)
             && uid in get(linkPath(uid, request.auth.uid)).data.shareLoc)
         || (resource.data.sos == true
-            && exists(/databases/$(database)/documents/emergencyContacts/$(uid + '_' + request.auth.token.phone_number)))
+            && exists(/databases/$(database)/documents/emergencyContacts/$(uid + '_' + get(/databases/$(database)/documents/users/$(request.auth.uid)).data.phone)))
       );
     }
   }
