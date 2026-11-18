@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -8,6 +9,15 @@ plugins {
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
 }
+
+// Optional value from .env (empty string if missing). Defined manually because the Secrets plugin
+// generates invalid Java for empty values.
+val googleWebClientId: String =
+  Properties()
+    .apply { rootProject.file(".env").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+    .getProperty("GOOGLE_WEB_CLIENT_ID", "")
+    .trim()
+    .trim('"')
 
 android {
   namespace = "com.example"
@@ -21,6 +31,7 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
   }
 
   signingConfigs {
@@ -74,6 +85,7 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.add("GOOGLE_WEB_CLIENT_ID")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
